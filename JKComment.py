@@ -206,6 +206,9 @@ class JKComment:
                 if int(chat[0]['chat']['date']) < self.date.timestamp():
                     print() # 改行を出力
                     break
+            
+            # コメントセッションを閉じる
+            commentsession.close()
 
             print(f"コメントを {watchsession_info['program']['title']} から取得しました。")
 
@@ -416,6 +419,9 @@ class JKComment:
             api_url = f"https://public.api.nicovideo.jp/v1/channel/channelapp/channels/{jikkyo_data['id'][2:]}/lives.json?sort=channelpage"
             api_response = json.loads(requests.get(api_url).content)  # ch とか co を削ぎ落としてから
 
+            if 'data' not in api_response:
+                raise ResponseError('API リクエストに失敗しました。メンテナンス中かもしれません。')
+
             # アイテムをソート
             # 参考: https://note.nkmk.me/python-dict-list-sort/
             items = api_response['data']
@@ -431,16 +437,16 @@ class JKComment:
             api_url = f"https://com.nicovideo.jp/api/v1/communities/{jikkyo_data['id'][2:]}/lives.json"
             api_response = json.loads(requests.get(api_url).content)  # ch とか co を削ぎ落としてから
 
+            if 'data' not in api_response:
+                raise ResponseError('API リクエストに失敗しました。メンテナンス中かもしれません。')
+
             # 放送 ID を抽出
             for live in api_response['data']['lives']:
                 # ON_AIR 状態またはタイムシフトが取得可能であれば追加
                 # タイムシフトが取得不可のものも含めてしまうと無駄な API アクセスが発生するため
-                try:
-                    if (live['status'] == 'ON_AIR' or live['timeshift']['can_view'] == True):
-                        live_ids.append(live['id'])
-              　　　# タイムシフトが設定されてないとcan_view要素がなくてエラーするので
-                except:　
-                    pass
+                # live['timeshift']['enabled'] が False の場合、live['timeshift']['can_view'] は要素ごと存在しない
+                if (live['status'] == 'ON_AIR' or (live['timeshift']['enabled'] == True and live['timeshift']['can_view'] == True)):
+                    live_ids.append(live['id'])
 
             # 擬似的にチャンネル側の API レスポンスを再現
             # その方が把握しやすいので
@@ -499,7 +505,7 @@ class JKComment:
             return result
 
 
-    # JSON オブジェクトの過去ログを XML 形式の過去ログに変換
+    # JSON オブジェクトの過去ログを XML オブジェクトの過去ログに変換
     def __convertToXML(self, comments):
     
         # XML のエレメントツリー
@@ -520,7 +526,7 @@ class JKComment:
             # 属性を XML エレメント内の値として取得
             chat_elemtree = ET.SubElement(elemtree, 'chat', { key: str(value) for key, value in chat.items() })
 
-            # XML エレメント内の値に以前取得した本文指定
+            # XML エレメント内の値に以前取得した本文を指定
             chat_elemtree.text = chat_content
 
         return elemtree
