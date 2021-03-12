@@ -86,13 +86,16 @@ class JKComment:
                 when = min(endtime, date_235959_timestamp)
 
             # Sec-WebSocket-Protocol が重要
-            commentsession = websocket.create_connection(commentsession_info['messageServer']['uri'], header={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36',
-                'Sec-WebSocket-Extensions': 'permessage-deflate; client_max_window_bits',
-                'Sec-WebSocket-Protocol': 'msg.nicovideo.jp#json',
-                'Sec-WebSocket-Version': '13',
-            })
-            
+            try:
+                commentsession = websocket.create_connection(commentsession_info['messageServer']['uri'], header={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36',
+                    'Sec-WebSocket-Extensions': 'permessage-deflate; client_max_window_bits',
+                    'Sec-WebSocket-Protocol': 'msg.nicovideo.jp#json',
+                    'Sec-WebSocket-Version': '13',
+                })
+            except ConnectionResetError as ex:
+                raise WebSocketError(f"コメントセッションへの接続がリセットされました。({ex})")
+
             # コメント情報を入れるリスト
             chat = []
 
@@ -117,7 +120,7 @@ class JKComment:
                         }
                     },
                 ]))
-                
+
                 # コメント情報を入れるリスト（1000 コメントごとの小分け）
                 chat_child = []
 
@@ -129,10 +132,14 @@ class JKComment:
 
                     # 受信データを取得
                     try:
-                        response = json.loads(commentsession.recv())
+                        response_raw = commentsession.recv()
+                        response = json.loads(response_raw)
                     # タイムアウトした（＝これ以上コメントは返ってこない）のでループを抜ける
                     except websocket._exceptions.WebSocketTimeoutException:
                         break
+                    # JSON デコードに失敗
+                    except json.decoder.JSONDecodeError:
+                        raise WebSocketError(f"受信データ '{response_raw}' を JSON としてデコードできません。")
 
                     # スレッド情報
                     if 'thread' in response:
@@ -142,7 +149,7 @@ class JKComment:
                             last_res = response['thread']['last_res']
                         else:
                             last_res = -1  # last_res が存在しない場合は -1 に設定
-                        
+
                     # コメント情報
                     if 'chat' in response:
 
@@ -192,7 +199,7 @@ class JKComment:
                 # chat に chat_child の内容を取得
                 # 最後のコメントから遡るので、さっき取得したコメントは既に取得したコメントよりも前に連結する
                 chat = chat_child + chat
-                
+
                 # 標準出力を上書きする
                 # 参考: https://hacknote.jp/archives/51679/
                 print('\r' + f"{self.date.strftime('%Y/%m/%d')} 中の合計 {str(len(chat))} 件のコメントを取得しました。", end='')
@@ -206,7 +213,7 @@ class JKComment:
                 if int(chat[0]['chat']['date']) < self.date.timestamp():
                     print() # 改行を出力
                     break
-            
+
             # コメントセッションを閉じる
             commentsession.close()
 
@@ -231,7 +238,7 @@ class JKComment:
         chat = []
         for live_id in live_ids:
             chat = chat + getCommentOne(live_id)
-        
+
         print('-' * shutil.get_terminal_size().columns)
         print(f"合計コメント数: {str(len(chat))} 件")
 
@@ -301,7 +308,7 @@ class JKComment:
             # Cookie を保存
             with open(cookie_dump, 'wb') as f:
                 pickle.dump(session.cookies, f)
-            
+
             return session.cookies.get('user_session')
 
 
@@ -337,7 +344,7 @@ class JKComment:
 
             # もう一度情報を取得
             watchsession_info = get(user_session)
-            
+
         # もう一度ログインしたのに非ログイン状態なら raise
         if watchsession_info['user']['isLoggedIn'] == False:
             raise LoginError('ログインに失敗しました。メールアドレスまたはパスワードが間違っている可能性があります。')
@@ -357,11 +364,14 @@ class JKComment:
             )
 
         # User-Agent は標準のだと弾かれる
-        watchsession = websocket.create_connection(watchsession_info['site']['relive']['webSocketUrl'], header={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36',
-            'Sec-WebSocket-Extensions': 'permessage-deflate; client_max_window_bits',
-            'Sec-WebSocket-Version': '13',
-        })
+        try:
+            watchsession = websocket.create_connection(watchsession_info['site']['relive']['webSocketUrl'], header={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36',
+                'Sec-WebSocket-Extensions': 'permessage-deflate; client_max_window_bits',
+                'Sec-WebSocket-Version': '13',
+            })
+        except ConnectionResetError as ex:
+            raise WebSocketError(f"視聴セッションへの接続がリセットされました。({ex})")
 
         # 視聴セッションリクエストを送る
         watchsession.send(json.dumps({
@@ -384,7 +394,12 @@ class JKComment:
         while True:
 
             # 受信データを取得
-            response = json.loads(watchsession.recv())
+            try:
+                response_raw = watchsession.recv()
+                response = json.loads(response_raw)
+            # JSON デコードに失敗
+            except json.decoder.JSONDecodeError:
+                raise WebSocketError(f"受信データ '{response_raw}' を JSON としてデコードできません。")
 
             # 部屋情報
             if response['type'] == 'room':
@@ -453,7 +468,7 @@ class JKComment:
             for live_id in live_ids:
 
                 # API にアクセス
-                api_url = f'https://api.cas.nicovideo.jp/v1/services/live/programs/{live_id}'
+                api_url = f"https://api.cas.nicovideo.jp/v1/services/live/programs/{live_id}"
                 api_response = json.loads(requests.get(api_url).content)
 
                 if 'data' not in api_response:
@@ -461,10 +476,10 @@ class JKComment:
 
                 # なぜかこの API は ID が文字列なので、互換にするために数値に変換
                 api_response['data']['id'] = int(api_response['data']['id'].replace('lv', ''))
-                
+
                 # items にレスポンスデータを入れる
                 items.append(api_response['data'])
-                
+
             # 開始時刻昇順でソート
             items = sorted(items, key=lambda x: x['showTime']['beginAt'])
 
@@ -507,10 +522,10 @@ class JKComment:
 
     # JSON オブジェクトの過去ログを XML オブジェクトの過去ログに変換
     def __convertToXML(self, comments):
-    
+
         # XML のエレメントツリー
         elemtree = ET.Element('packet')
-        
+
         # コメントごとに
         for comment in comments:
 
@@ -533,15 +548,17 @@ class JKComment:
 
 
 # 例外定義
-class ResponseError(Exception):
-    pass
 class FormatError(Exception):
+    pass
+class JikkyoIDError(Exception):
+    pass
+class LiveIDError(Exception):
     pass
 class LoginError(Exception):
     pass
 class SessionError(Exception):
     pass
-class JikkyoIDError(Exception):
+class ResponseError(Exception):
     pass
-class LiveIDError(Exception):
+class WebSocketError(Exception):
     pass
