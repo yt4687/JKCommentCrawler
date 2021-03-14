@@ -13,6 +13,7 @@ import sys
 import time
 import traceback
 import xml.dom.minidom as minidom
+import requests
 
 import JKComment
 
@@ -42,6 +43,7 @@ def main():
     jkcomment_folder = config.get('Default', 'jkcomment_folder').rstrip('/')
     nicologin_mail = config.get('Default', 'nicologin_mail')
     nicologin_password = config.get('Default', 'nicologin_password')
+    discord_webhookurl = config.get('Default', 'webhook_url')
 
     # 行区切り
     print('=' * shutil.get_terminal_size().columns)
@@ -52,6 +54,16 @@ def main():
         # インスタンスを作成
         jkcomment = JKComment.JKComment(jikkyo_id, date, nicologin_mail, nicologin_password)
         print(f"{date.strftime('%Y/%m/%d')} 中に放送された {JKComment.JKComment.getJikkyoChannelName(jikkyo_id)} のコメントを取得します。")
+
+        message = (f"{date.strftime('%Y/%m/%d')} 中に放送された {JKComment.JKComment.getJikkyoChannelName(jikkyo_id)} のコメントを取得します。\n```")
+
+        def send_discord(message):
+            headers = {'Content-Type': 'application/json'}
+            # メッセージ
+            payload = {'content': message}
+            response = requests.post(discord_webhookurl, json.dumps(payload), headers = headers)
+
+            return response
 
         # リトライ回数
         retry_maxcount = 3
@@ -66,6 +78,9 @@ def main():
             except JKComment.LiveIDError as ex:
                 print(f"{date.strftime('%Y/%m/%d')} 中に放送された番組が見つかりませんでした。")
                 print('=' * shutil.get_terminal_size().columns)
+                message += (f"{date.strftime('%Y/%m/%d')} 中に放送された番組が見つかりませんでした。")+"```"
+                responsedi = send_discord(message)
+        	    
                 return  # この関数を抜ける
             # 捕捉された例外
             except (JKComment.SessionError, JKComment.ResponseError, JKComment.WebSocketError) as ex:
@@ -73,6 +88,10 @@ def main():
                 print(f"エラー発生時刻: {datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')} 実況ID: {jikkyo_id} リトライ回数: {retry_count}", file=sys.stderr)
                 print(f"エラー: [{ex.__class__.__name__}] {ex.args[0]}", file=sys.stderr)
                 print('/' * shutil.get_terminal_size().columns, file=sys.stderr)
+                message += ('/' * shutil.get_terminal_size().columns)+"\n"
+                message += (f"エラー発生時刻: {datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')} 実況ID: {jikkyo_id} リトライ回数: {retry_count}\n")
+                message += (f"エラー: [{ex.__class__.__name__}] {ex.args[0]}\n")
+                message += ('/' * shutil.get_terminal_size().columns)+"\n"
             # 捕捉されない例外
             except Exception as ex:
                 print('/' * shutil.get_terminal_size().columns, file=sys.stderr)
@@ -80,6 +99,11 @@ def main():
                 print(f"エラー: [{ex.__class__.__name__}] {ex.args[0]}", file=sys.stderr)
                 traceback.print_exc(file=sys.stderr)
                 print('/' * shutil.get_terminal_size().columns, file=sys.stderr)
+                message += ('/' * shutil.get_terminal_size().columns)+"\n"
+                message += (f"エラー発生時刻: {datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')} 実況ID: {jikkyo_id} リトライ回数: {retry_count}\n")
+                message += (f"エラー: [{ex.__class__.__name__}] {ex.args[0]}\n")
+                message += traceback.print_exc+"\n"
+                message += ('/' * shutil.get_terminal_size().columns)+"\n"
 
             # リトライカウント
             retry_count = retry_count + 1
@@ -92,6 +116,9 @@ def main():
         if retry_count >= retry_maxcount:
             print('リトライに失敗しました。スキップします。')
             print('=' * shutil.get_terminal_size().columns)
+            message += ('リトライに失敗しました。スキップします。\n```@everyone')
+            responsedi = send_discord(message)
+            print(responsedi)
             return
 
         # XML をフォーマットする
@@ -120,14 +147,20 @@ def main():
         # コメントデータ（XML）を保存
         if comment_xml == '':
             print(f"{date.strftime('%Y/%m/%d')} 中のコメントが 0 件のため、ログの保存をスキップします。")
+            message += (f"{date.strftime('%Y/%m/%d')} 中のコメントが 0 件のため、ログの保存をスキップします。\n```")
         # 以前取得したログの方が今取得したログよりも文字数が多いとき
         # タイムシフトの公開期限が終了したなどの理由で以前よりもログ取得が少なくなる場合に上書きしないようにする
         elif filelength > len(comment_xml):
             print('以前取得したログの方が文字数が多いため、ログの保存をスキップします。')
+            message += ('以前取得したログの方が文字数が多いため、ログの保存をスキップします。\n```')
         else:
             with open(filename, 'w', encoding='UTF-8') as f:
                 f.write(comment_xml)
                 print(f"ログを {filename} に保存しました。")
+                message += (f"ログを {filename} に保存しました。\n```")
+
+        responsedi = send_discord(message)
+        print(responsedi)
 
         # 行区切り
         print('=' * shutil.get_terminal_size().columns)
