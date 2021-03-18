@@ -155,9 +155,7 @@ def main():
 
             # テーブルがない場合は作成する
             cursor.execute('create table if not exists '+jikkyoid+' (thread varchar(50) not null, no int(6) not null, vpos int(20) not null, date int(20) not null, date_usec int(15) not null, mail varchar(50) not null, user_id varchar(100) not null, premium varchar(1) not null, anonymity varchar(1) not null, text varchar(10000) not null, primary key(thread, no));')
-
-            # 配列をセット
-            params = []
+            
             print('SQLデータベースへの書き込みを行っています...')
             #実際の書き込み処理
             for elem in root.iter('chat'):
@@ -167,7 +165,9 @@ def main():
 
                 # 新規に登録する場合
                 if cursor.rowcount == 0:
-
+                    
+                    # 配列をセット
+                    params = []
                     try:
                         # vposが空のことがある
                         if elem.get('vpos') == None:
