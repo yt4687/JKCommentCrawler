@@ -1,5 +1,13 @@
 
-# JKCommentCrawler
+# JKCommentCrawler  
+
+オリジナルにSQLへの書き込み機能とDiscordへの通知機能を追加したフォークです。  
+SQLへ書き込まない時の迂回処理を実装していないので使わない場合は本家を利用するか[旧バージョン](https://github.com/yt4687/JKCommentCrawler/tree/8219051f0cc11f3a12f830f9bce37086717961c6)を使うようにしてください。  
+そのうち実装する予定。  
+Discordへ通知するときは、iniのwebhook_urlへ発行したDiscordのURLを入力してください。  
+SQLへ書き込む際は、iniのSQLSettingの項目を編集してくだいさい。  
+他はオリジナルと変わりません。  
+
 
 ![681](https://user-images.githubusercontent.com/39271166/102918400-2d5bb700-44ca-11eb-8b43-7d5744de8746.png)
 
