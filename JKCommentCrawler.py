@@ -16,7 +16,6 @@ import xml.dom.minidom as minidom
 import requests
 import MySQLdb
 from lxml import etree
-from MySQLdb.cursors import DictCursor
 
 import JKComment
 
@@ -145,18 +144,20 @@ def main():
             root = etree.fromstring(sourcedata)
         
             # 接続するDBを定義
-            # シングルクォーテーションが邪魔するので消す(いい方法があったら直すかも、一回しか通さないからいいんじゃないかとも思う)
+            # シングルクォーテーションが邪魔するので消す(いい方法があったら直すかも)
             thost = sql_host.replace("'", "")
             tuser = sql_username.replace("'", "")
             tpasswd = sql_password.replace("'", "")
             tdb = sql_dbname.replace("'", "")
             connection = MySQLdb.connect(host = thost, user = tuser, passwd = tpasswd, db = tdb, port = int(sql_port), charset = 'utf8mb4')
-            cursor = connection.cursor(DictCursor)
+            cursor = connection.cursor()
 
             # テーブルがない場合は作成する
-            cursor.execute('create table if not exists '+jikkyoid+' (thread varchar(50) not null, no int(6) not null, vpos int(20) not null, date int(20) not null, date_usec int(15) not null, mail varchar(50) not null, user_id varchar(100) not null, premium varchar(1) not null, anonymity varchar(1) not null, text varchar(10000) not null, primary key(thread, no));')
+            cursor.execute('create table if not exists '+jikkyoid+' (thread varchar(50) not null, no int(6) not null, vpos int(20) not null, date int(20) not null, date_usec int(15) not null, mail varchar(50) not null, user_id varchar(100) not null, premium varchar(1) not null, anonymity varchar(1) not null, text varchar(10000) not null, primary key(thread, no), index date (date));')
             
             print('SQLデータベースへの書き込みを行っています...')
+            # 配列をセット
+            params = []
             #実際の書き込み処理
             for elem in root.iter('chat'):
 
@@ -166,8 +167,6 @@ def main():
                 # 新規に登録する場合
                 if cursor.rowcount == 0:
                     
-                    # 配列をセット
-                    params = []
                     try:
                         # vposが空のことがある
                         if elem.get('vpos') == None:
@@ -176,12 +175,12 @@ def main():
                             sqlvpos = elem.get('vpos')
                         # date_usecが空のことがある
                         if elem.get('date_usec') == None:
-                            sqldate_usec = '0'
+                            sqldate_usec = "0"
                         else:
                             sqldate_usec = elem.get('date_usec')
                         # mailが空のことがある
                         if elem.get('mail') == None:
-                            sqlmail = '0'
+                            sqlmail = "0"
                         else:
                             sqlmail = elem.get('mail')
                         # premium属性の処理
@@ -212,11 +211,6 @@ def main():
                         print('MySQLdb.Error: ', e)
                         print('書き込めなかった項目 スレッド番号：' + elem.get('thread') + ' 連番：' + elem.get('no'))
 
-                    # 生成したデータをまとめて書き込み
-                    sql_insert = "INSERT INTO " + jikkyoid + " (thread, no, vpos, date, date_usec, mail, user_id, premium, anonymity, text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"
-                    cursor.executemany(sql_insert,params)
-                    # コミットする
-                    connection.commit()
                     #print(params)
 
                 # 既にデータがある場合    
@@ -225,15 +219,21 @@ def main():
                     pass
 
                 # それ以外、1件以上のデータがある場合
-                #else :
-                    #print('データに異常があります')
-                    #break
+                else :
+                    print('データに異常があります')
+                    break
+
+            # 生成したデータをまとめて書き込み
+            sql_insert = "INSERT INTO " + jikkyoid + " (thread, no, vpos, date, date_usec, mail, user_id, premium, anonymity, text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"
+            cursor.executemany(sql_insert,params)
+            # コミットする
+            connection.commit()
             # セッションを閉じる
             connection.close()
 
         # XML にフォーマット
         comment_xml = format_xml(comment_xmlobject)
-        # SQLに書き込み
+        # SQLに書き込み 処理の関係でXMLフォーマット前の生データを送る
         writesql(jikkyo_id, comment_xmlobject)
 
         # ファイル名・フォルダ
